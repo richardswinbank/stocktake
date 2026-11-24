@@ -1,0 +1,31 @@
+// Caches the app so it works with no signal. Bump the version to force an update.
+const PREFIX = 'stocktake-';
+const CACHE = PREFIX + 'v1';
+const FILES = ['./', 'index.html', 'manifest.webmanifest', 'icon.svg', 'icon-192.png', 'icon-512.png'];
+
+self.addEventListener('install', e => {
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+});
+
+// Only delete our own old caches: other apps on the same github.io origin share this cache storage.
+self.addEventListener('activate', e => {
+  e.waitUntil(
+    caches.keys()
+      .then(keys => Promise.all(keys.filter(k => k.startsWith(PREFIX) && k !== CACHE).map(k => caches.delete(k))))
+      .then(() => self.clients.claim())
+  );
+});
+
+// Serve from cache straight away, and refresh the cached copy in the background when online.
+self.addEventListener('fetch', e => {
+  if (e.request.method !== 'GET') return;
+  e.respondWith(
+    caches.open(CACHE).then(async cache => {
+      const cached = await cache.match(e.request);
+      const fresh = fetch(e.request)
+        .then(res => { if (res.ok) cache.put(e.request, res.clone()); return res; })
+        .catch(() => cached);
+      return cached || fresh;
+    })
+  );
+});

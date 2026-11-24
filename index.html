@@ -1,0 +1,314 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#23493a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Stocktake">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Stocktake</title>
+<style>
+  :root {
+    --bg: #f4f1ea; --fg: #1c1c1c; --muted: #6b6b6b; --panel: #fff; --line: #ddd8cc;
+    --bar: #23493a; --bar-fg: #fff; --ok: #1f7a4d; --danger: #b3261e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #14161b; --fg: #f0f0f0; --muted: #9a9a9a; --panel: #1f232b; --line: #343a46; --bar: #0f1a15; }
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    display: flex; flex-direction: column; background: var(--bg); color: var(--fg);
+    font: 16px/1.3 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    touch-action: manipulation; user-select: none; -webkit-user-select: none;
+    padding-top: env(safe-area-inset-top);
+  }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; touch-action: manipulation; }
+  nav { display: flex; background: var(--bar); }
+  nav button { flex: 1; padding: 12px 0; background: none; color: var(--bar-fg); opacity: .6; font-weight: 600; border-bottom: 3px solid transparent; }
+  nav button.on { opacity: 1; border-bottom-color: #fff; }
+  main { flex: 1; overflow-y: auto; padding: 10px; }
+  section[hidden] { display: none; }
+  .hint { color: var(--muted); text-align: center; padding: 30px 10px; }
+  .hint a { color: inherit; font-weight: 700; }
+
+  /* Count */
+  #tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .tile { position: relative; }
+  .tile .add {
+    width: 100%; min-height: 112px; padding: 10px; border-radius: 14px; color: #fff; text-align: left;
+    display: flex; flex-direction: column; justify-content: space-between; gap: 6px;
+    box-shadow: 0 2px 0 rgba(0,0,0,.25);
+  }
+  .tile .add:active { transform: translateY(2px); box-shadow: none; filter: brightness(.9); }
+  .tile .name { font-weight: 600; font-size: 17px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+  .tile .num { font-size: 36px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1; padding-right: 50px; }
+  .tile .minus {
+    position: absolute; bottom: 8px; right: 8px; width: 44px; height: 44px; border-radius: 22px;
+    background: rgba(0,0,0,.35); color: #fff; font-size: 26px; font-weight: 700; line-height: 1;
+  }
+  footer { background: var(--bar); color: var(--bar-fg); padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); }
+  #status { display: flex; justify-content: space-between; align-items: baseline; }
+  #lastcat { opacity: .75; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-right: 10px; }
+  #total { font-size: 44px; font-weight: 800; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .actions { display: flex; gap: 10px; margin-top: 6px; }
+  .actions button { padding: 14px; border-radius: 12px; font-weight: 700; font-size: 18px; color: #fff; }
+  #undo { flex: 1; background: rgba(255,255,255,.18); }
+  .actions button:disabled { opacity: .4; }
+
+  /* Setup */
+  .row { display: flex; gap: 6px; margin-bottom: 8px; align-items: center; }
+  .row input { font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px 10px; min-width: 0; user-select: text; -webkit-user-select: text; }
+  .row .n { flex: 1; }
+  .row button { width: 40px; height: 44px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line); font-size: 18px; }
+  .row .del { color: var(--danger); }
+  .wide { width: 100%; padding: 14px; border-radius: 12px; font-weight: 700; background: var(--bar); color: #fff; margin-top: 6px; }
+  .wide.alt { background: var(--panel); color: var(--fg); border: 1px solid var(--line); }
+  .wide.warn { background: var(--panel); color: var(--danger); border: 1px solid var(--danger); }
+  .wide:disabled { opacity: .4; }
+
+  /* Summary */
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 12px; overflow: hidden; margin-bottom: 10px; }
+  th, td { padding: 10px; text-align: left; border-bottom: 1px solid var(--line); }
+  th { font-size: 13px; color: var(--muted); font-weight: 600; }
+  td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  tfoot td { font-weight: 800; border-bottom: 0; }
+
+  #toast {
+    position: fixed; left: 50%; bottom: 190px; transform: translateX(-50%); background: #111; color: #fff;
+    padding: 10px 16px; border-radius: 20px; opacity: 0; transition: opacity .2s; pointer-events: none; white-space: nowrap;
+  }
+  #toast.show { opacity: .92; }
+
+  #ask { position: fixed; inset: 0; background: rgba(0,0,0,.55); display: grid; place-items: center; padding: 20px; z-index: 10; }
+  #ask[hidden] { display: none; }
+  #ask .box { background: var(--panel); border-radius: 16px; padding: 18px; width: 100%; max-width: 340px; }
+  #ask p { margin: 0 0 16px; font-size: 18px; }
+  #ask .actions button { flex: 1; }
+  #askno { background: var(--muted); }
+  #askyes { background: var(--danger); }
+</style>
+</head>
+<body>
+<nav>
+  <button data-tab="count">Count</button>
+  <button data-tab="summary">Summary</button>
+  <button data-tab="setup">Setup</button>
+</nav>
+
+<main>
+  <section id="count">
+    <div id="tiles"></div>
+    <p class="hint" id="noitems" hidden>No categories yet. Add some in <a href="#" id="gosetup">Setup</a>.</p>
+  </section>
+
+  <section id="summary" hidden>
+    <table>
+      <thead><tr><th>Category</th><th class="r">Count</th></tr></thead>
+      <tbody id="srows"></tbody>
+      <tfoot><tr><td>Total</td><td class="r" id="stotal"></td></tr></tfoot>
+    </table>
+    <button class="wide" id="share">Share counts</button>
+    <button class="wide warn" id="reset">Reset counts for a new stocktake</button>
+  </section>
+
+  <section id="setup" hidden>
+    <div id="rows"></div>
+    <button class="wide" id="additem">+ Add category</button>
+    <p class="hint">Changes are saved automatically on this phone.</p>
+  </section>
+</main>
+
+<footer id="bar">
+  <div id="status"><span id="lastcat"></span><span id="total"></span></div>
+  <div class="actions">
+    <button id="undo">Undo last tap</button>
+  </div>
+</footer>
+<div id="toast"></div>
+<div id="ask" hidden>
+  <div class="box">
+    <p id="askmsg"></p>
+    <div class="actions">
+      <button id="askno">Cancel</button>
+      <button id="askyes"></button>
+    </div>
+  </div>
+</div>
+
+<script>
+const COLOURS = ['#2f5d8a', '#a23b3b', '#3d7a4a', '#8a5a1f', '#6a4c93', '#1f7a7a', '#b0472e', '#4a5568'];
+const $ = id => document.getElementById(id);
+// Keys are prefixed "st." because other apps on the same github.io origin share this localStorage.
+const load = (k, d) => { try { return JSON.parse(localStorage.getItem('st.' + k)) ?? d; } catch { return d; } };
+const save = (k, v) => localStorage.setItem('st.' + k, JSON.stringify(v));
+const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+
+let items = load('items', []);    // [{id, name}]
+let counts = load('counts', {});  // id -> count
+let history = load('history', []); // recent taps, newest last: [{id, delta}]
+const HISTORY_MAX = 50;
+
+const nameOf = id => (items.find(it => it.id === id) || {}).name || 'Untitled';
+const totalCount = () => items.reduce((s, it) => s + (counts[it.id] || 0), 0);
+
+// In-page replacement for confirm(), which is suppressed in some installed/embedded browsers.
+function ask(msg, yesLabel) {
+  $('askmsg').textContent = msg;
+  $('askyes').textContent = yesLabel;
+  $('ask').hidden = false;
+  return new Promise(resolve => {
+    const close = answer => { $('ask').hidden = true; resolve(answer); };
+    $('askyes').onclick = () => close(true);
+    $('askno').onclick = () => close(false);
+  });
+}
+
+function showTab(tab) {
+  for (const s of document.querySelectorAll('section')) s.hidden = s.id !== tab;
+  for (const b of document.querySelectorAll('nav button')) b.classList.toggle('on', b.dataset.tab === tab);
+  $('bar').hidden = tab !== 'count';
+  if (tab === 'count') renderCount();
+  if (tab === 'summary') renderSummary();
+  if (tab === 'setup') renderSetup();
+}
+
+// ---- Count ----
+function renderCount() {
+  const tiles = $('tiles');
+  tiles.replaceChildren();
+  $('noitems').hidden = items.length > 0;
+  items.forEach((it, i) => {
+    const n = counts[it.id] || 0;
+    const tile = el('div', 'tile');
+    const add = el('button', 'add');
+    add.style.background = COLOURS[i % COLOURS.length];
+    add.append(el('span', 'name', it.name || 'Untitled'), el('span', 'num', n));
+    add.onclick = () => change(it.id, 1);
+    tile.append(add);
+    if (n) {
+      const minus = el('button', 'minus', '−');
+      minus.setAttribute('aria-label', 'Take one off');
+      minus.onclick = () => change(it.id, -1);
+      tile.append(minus);
+    }
+    tiles.append(tile);
+  });
+  const last = history[history.length - 1];
+  $('lastcat').textContent = last ? 'Last: ' + nameOf(last.id) + (last.delta > 0 ? ' +1' : ' −1') : '';
+  $('total').textContent = totalCount() + ' total';
+  $('undo').disabled = !last;
+}
+
+function change(id, delta, record = true) {
+  const n = (counts[id] || 0) + delta;
+  if (n < 0) return;
+  if (n > 0) counts[id] = n; else delete counts[id];
+  if (record) {
+    history.push({ id, delta });
+    if (history.length > HISTORY_MAX) history.shift();
+  }
+  save('counts', counts); save('history', history);
+  if (navigator.vibrate && delta > 0) navigator.vibrate(15);
+  renderCount();
+}
+
+$('undo').onclick = () => {
+  const last = history.pop();
+  if (!last) return;
+  if (items.some(it => it.id === last.id)) change(last.id, -last.delta, false);
+  else { save('history', history); renderCount(); }
+};
+
+// ---- Summary ----
+function renderSummary() {
+  const rows = $('srows');
+  rows.replaceChildren();
+  for (const it of items) {
+    const tr = el('tr');
+    tr.append(el('td', '', it.name || 'Untitled'), el('td', 'r', counts[it.id] || 0));
+    rows.append(tr);
+  }
+  $('stotal').textContent = totalCount();
+  $('share').disabled = $('reset').disabled = items.length === 0;
+}
+
+function summaryText() {
+  const date = new Date().toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
+  const lines = items.map(it => (it.name || 'Untitled') + ': ' + (counts[it.id] || 0));
+  return ['Stocktake ' + date, ...lines, 'Total: ' + totalCount()].join('\n');
+}
+
+$('share').onclick = async () => {
+  const text = summaryText();
+  if (navigator.share) {
+    try { await navigator.share({ text }); return; }
+    catch (e) { if (e.name === 'AbortError') return; }
+  }
+  try { await navigator.clipboard.writeText(text); toast('Counts copied'); }
+  catch { toast('Could not share or copy'); }
+};
+
+$('reset').onclick = async () => {
+  if (!await ask('Set every count back to zero? Your categories are kept.', 'Reset')) return;
+  counts = {}; history = [];
+  save('counts', counts); save('history', history);
+  renderSummary();
+};
+
+// ---- Setup ----
+function renderSetup() {
+  const rows = $('rows');
+  rows.replaceChildren();
+  items.forEach((it, i) => {
+    const row = el('div', 'row');
+    const name = el('input', 'n');
+    name.placeholder = 'Category name';
+    name.value = it.name;
+    name.oninput = () => { it.name = name.value.trim(); save('items', items); };
+    const up = el('button', '', '↑');
+    up.setAttribute('aria-label', 'Move up');
+    up.disabled = i === 0;
+    up.onclick = () => { [items[i - 1], items[i]] = [items[i], items[i - 1]]; save('items', items); renderSetup(); };
+    const del = el('button', 'del', '✕');
+    del.setAttribute('aria-label', 'Delete');
+    del.onclick = async () => {
+      const n = counts[it.id] || 0;
+      if ((it.name || n) && !await ask('Delete "' + (it.name || 'Untitled') + '"' + (n ? ' and its count of ' + n : '') + '?', 'Delete')) return;
+      items.splice(items.indexOf(it), 1);
+      delete counts[it.id];
+      history = history.filter(h => h.id !== it.id);
+      save('items', items); save('counts', counts); save('history', history);
+      renderSetup();
+    };
+    row.append(name, up, del);
+    rows.append(row);
+  });
+}
+
+$('additem').onclick = () => {
+  items.push({ id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), name: '' });
+  save('items', items);
+  renderSetup();
+  $('rows').lastElementChild.querySelector('input').focus();
+};
+
+let toastTimer;
+function toast(msg) {
+  $('toast').textContent = msg;
+  $('toast').classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => $('toast').classList.remove('show'), 1800);
+}
+
+for (const b of document.querySelectorAll('nav button')) b.onclick = () => showTab(b.dataset.tab);
+$('gosetup').onclick = e => { e.preventDefault(); showTab('setup'); };
+showTab(items.length ? 'count' : 'setup');
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
